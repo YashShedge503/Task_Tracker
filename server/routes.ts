@@ -78,8 +78,8 @@ const requireRole = (roles: string[]) => {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session configuration
-  const session = require('express-session');
-  const MemoryStore = require('memorystore')(session);
+  const session = (await import('express-session')).default;
+  const MemoryStore = (await import('memorystore')).default(session);
   
   app.use(session({
     secret: process.env.SESSION_SECRET || 'fallback-secret-key',

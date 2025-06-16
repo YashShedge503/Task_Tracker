@@ -89,25 +89,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllUsers(filters?: { role?: string; search?: string }): Promise<User[]> {
-    let query = db.select().from(users);
-    
-    const conditions = [];
-    if (filters?.role) {
-      conditions.push(eq(users.role, filters.role));
+    try {
+      const conditions = [];
+      if (filters?.role) {
+        conditions.push(eq(users.role, filters.role));
+      }
+      if (filters?.search) {
+        conditions.push(or(
+          ilike(users.name, `%${filters.search}%`),
+          ilike(users.email, `%${filters.search}%`),
+          ilike(users.address, `%${filters.search}%`)
+        ));
+      }
+      
+      if (conditions.length > 0) {
+        const result = await db.select().from(users).where(and(...conditions)).orderBy(asc(users.name));
+        return result;
+      }
+      
+      const result = await db.select().from(users).orderBy(asc(users.name));
+      return result;
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      return [];
     }
-    if (filters?.search) {
-      conditions.push(or(
-        ilike(users.name, `%${filters.search}%`),
-        ilike(users.email, `%${filters.search}%`),
-        ilike(users.address, `%${filters.search}%`)
-      ));
-    }
-    
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
-    
-    return await query.orderBy(asc(users.name));
   }
 
   async updateUserRole(id: string, role: string): Promise<User> {
@@ -146,7 +151,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllStores(filters?: { search?: string; address?: string }): Promise<StoreWithRating[]> {
-    let query = db
+    const conditions = [];
+    if (filters?.search) {
+      conditions.push(ilike(stores.name, `%${filters.search}%`));
+    }
+    if (filters?.address) {
+      conditions.push(ilike(stores.address, `%${filters.address}%`));
+    }
+
+    const baseQuery = db
       .select({
         id: stores.id,
         name: stores.name,
@@ -162,19 +175,10 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(ratings, eq(stores.id, ratings.storeId))
       .groupBy(stores.id);
 
-    const conditions = [];
-    if (filters?.search) {
-      conditions.push(ilike(stores.name, `%${filters.search}%`));
-    }
-    if (filters?.address) {
-      conditions.push(ilike(stores.address, `%${filters.address}%`));
-    }
-    
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const results = conditions.length > 0 
+      ? await baseQuery.where(and(...conditions)).orderBy(asc(stores.name))
+      : await baseQuery.orderBy(asc(stores.name));
 
-    const results = await query.orderBy(asc(stores.name));
     return results.map(r => ({
       ...r,
       averageRating: Number(r.averageRating) || 0,
