@@ -151,39 +151,47 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllStores(filters?: { search?: string; address?: string }): Promise<StoreWithRating[]> {
-    const conditions = [];
-    if (filters?.search) {
-      conditions.push(ilike(stores.name, `%${filters.search}%`));
+    try {
+      const conditions = [];
+      if (filters?.search) {
+        conditions.push(ilike(stores.name, `%${filters.search}%`));
+      }
+      if (filters?.address) {
+        conditions.push(ilike(stores.address, `%${filters.address}%`));
+      }
+
+      const baseQuery = db
+        .select({
+          id: stores.id,
+          name: stores.name,
+          email: stores.email,
+          address: stores.address,
+          ownerId: stores.ownerId,
+          createdAt: stores.createdAt,
+          updatedAt: stores.updatedAt,
+          averageRating: sql<number>`COALESCE(AVG(${ratings.rating}), 0)`,
+          totalRatings: sql<number>`COUNT(${ratings.id})`,
+        })
+        .from(stores)
+        .leftJoin(ratings, eq(stores.id, ratings.storeId))
+        .groupBy(stores.id);
+
+      let results;
+      if (conditions.length > 0) {
+        results = await baseQuery.where(and(...conditions)).orderBy(asc(stores.name));
+      } else {
+        results = await baseQuery.orderBy(asc(stores.name));
+      }
+
+      return results.map(r => ({
+        ...r,
+        averageRating: Number(r.averageRating) || 0,
+        totalRatings: Number(r.totalRatings) || 0,
+      }));
+    } catch (error) {
+      console.error("Error fetching stores:", error);
+      return [];
     }
-    if (filters?.address) {
-      conditions.push(ilike(stores.address, `%${filters.address}%`));
-    }
-
-    const baseQuery = db
-      .select({
-        id: stores.id,
-        name: stores.name,
-        email: stores.email,
-        address: stores.address,
-        ownerId: stores.ownerId,
-        createdAt: stores.createdAt,
-        updatedAt: stores.updatedAt,
-        averageRating: sql<number>`COALESCE(AVG(${ratings.rating}), 0)`,
-        totalRatings: sql<number>`COUNT(${ratings.id})`,
-      })
-      .from(stores)
-      .leftJoin(ratings, eq(stores.id, ratings.storeId))
-      .groupBy(stores.id);
-
-    const results = conditions.length > 0 
-      ? await baseQuery.where(and(...conditions)).orderBy(asc(stores.name))
-      : await baseQuery.orderBy(asc(stores.name));
-
-    return results.map(r => ({
-      ...r,
-      averageRating: Number(r.averageRating) || 0,
-      totalRatings: Number(r.totalRatings) || 0,
-    }));
   }
 
   async getStoreById(id: number): Promise<Store | undefined> {
